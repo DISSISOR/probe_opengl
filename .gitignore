@@ -1,0 +1,11 @@
+.gdb_history
+core.*
+.cache
+bin
+obj
+CMakeFiles
+*.cmake
+CMakeCache.txt
+compile_commands.json
+main
+Makefile
