@@ -7,6 +7,9 @@
 #include "gl.h"
 #include "shader_manager.h"
 
+#define RAYMATH_STATIC_INLINE
+#include "raymath.h"
+
 #define EXCEPT_SUCC_SDL(val, goto_label) do {\
 if (!(val)) {\
     SDL_Log("%s\n", SDL_GetError());\
@@ -20,24 +23,24 @@ static bool prev_kb_state[512];
 static bool is_key_pressed(SDL_Scancode code);
 static bool is_key_just_pressed(SDL_Scancode code);
 
-typedef struct Vec3 {
-    f32 x, y, z;
-} Vec3;
-
-typedef struct Vec4 {
-    f32 x, y, z, w;
-} Vec4;
-
 typedef struct Transform {
-    Vec3 position;
-    Vec4 rotation;
-    Vec3 scale;
+    Vector3 position;
+    Quaternion rotation;
+    Vector3 scale;
 } Transform;
 
 typedef struct GameObject {
     MeshHandle mesh;
     Transform transform;
 } GameObject;
+
+typedef struct Camera {
+    Vector3 up;
+    Vector3 eye;
+    Vector3 traget;
+} Camera;
+
+static void game_object_draw(const GameObject *obj, const Camera *cam);
 
 static Vertex cube_verts[] = {
     { {-0.5, -0.5, -0.5}, {0, 0}, {0, 0, -1}, {1, 0, 0} }, // 0
@@ -149,7 +152,10 @@ int main(int argc, char **argv) {
     bool quit = false;
     u64 last = SDL_GetTicks();
     u8 watch_frame_counter = 0;
+    SDL_SetWindowRelativeMouseMode(win, true);
     while (!quit) {
+        f32 dx = 0;
+        f32 dy = 0;
         u64 cur_time = SDL_GetTicks();
         UNUSED(last-cur_time);
         watch_frame_counter++;
@@ -168,9 +174,26 @@ int main(int argc, char **argv) {
                 case SDL_EVENT_WINDOW_RESIZED:
                     glViewport(0, 0, ev.window.data1, ev.window.data2);
                     break;
+                case SDL_EVENT_MOUSE_MOTION:
+                    // SDL_Log("%s\n", "move");
+                    if (SDL_GetWindowRelativeMouseMode(win)){
+                        dx = ev.motion.xrel;
+                        dy = ev.motion.yrel;
+                        SDL_Log("Move is (%f, %f)\n", dx, dy);
+                    }
+                    break;
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                    if (ev.button.button == 1) {
+                        SDL_SetWindowRelativeMouseMode(win, true);
+                    }
+                    break;
+                default:
             }
         }
-        if (is_key_pressed(SDL_SCANCODE_Q) || is_key_pressed(SDL_SCANCODE_ESCAPE)) {
+        if (is_key_pressed(SDL_SCANCODE_ESCAPE)) {
+            SDL_SetWindowRelativeMouseMode(win, false);
+        }
+        if (is_key_pressed(SDL_SCANCODE_Q)) {
             quit = true;
         }
         (void)is_key_just_pressed;
@@ -201,3 +224,12 @@ static bool is_key_just_pressed(SDL_Scancode code) {
     return kb_state[code] && !prev_kb_state[code];
 }
 
+static void game_object_draw(const GameObject *obj, const Camera *cam) {
+    const Transform *const tr = &obj->transform;
+    const Matrix translation = MatrixTranslate(tr->position.x, tr->position.y, tr->position.z);
+    const Matrix scale = MatrixScale(tr->scale.x, tr->scale.y, tr->scale.z);
+    const Matrix rotation = QuaternionToMatrix(tr->rotation);
+    const Matrix model = MatrixMultiply(MatrixMultiply(scale, translation), rotation); 
+    const Matrix view = MatrixLookAt(cam->eye, cam->traget, cam->up);
+    // const Matrix total_transform = mul
+}
