@@ -37,27 +37,31 @@ typedef struct GameObject {
 typedef struct Camera {
     Vector3 up;
     Vector3 eye;
-    Vector3 traget;
+    Vector3 target;
 } Camera;
 
-static void game_object_draw(const GameObject *obj, const Camera *cam);
+static Camera cam;
+static void game_object_draw(const GameObject *obj);
 
 static Vertex cube_verts[] = {
-    { {-0.5, -0.5, -0.5}, {0, 0}, {0, 0, -1}, {1, 0, 0} }, // 0
-    { {-0.5, -0.5,  0.5}, {1, 0}, {0, 0, -1}, {1, 0, 0} }, // 1
-    { {-0.5,  0.5, -0.5}, {0, 1}, {0, 0, -1}, {1, 0, 0} }, // 2
-    { {-0.5,  0.5,  0.5}, {1, 1}, {0, 0, -1}, {1, 0, 0} }, // 3
-    { { 0.5, -0.5, -0.5}, {0, 0}, {0, 0, 1}, {0, 1, 0} }, // 4
-    { { 0.5, -0.5,  0.5}, {1, 0}, {0, 0, 1}, {0, 1, 0} }, // 5
-    { { 0.5,  0.5, -0.5}, {0, 1}, {0, 0, 1}, {0, 1, 0} }, // 6
-    { { 0.5,  0.5,  0.5}, {1, 1}, {0, 0, 1}, {0, 1, 0} }  // 7
+    // Дальние (z+)
+    { { 0.5, -0.5,  0.5}, {1, 0}, {0, 0, 1}, {0, 1, 0} },
+    { {-0.5, -0.5,  0.5}, {1, 0}, {0, 0, -1}, {1, 0, 0} },
+    { {-0.5,  0.5,  0.5}, {1, 1}, {0, 0, -1}, {1, 0, 0} },
+    { { 0.5,  0.5,  0.5}, {1, 1}, {0, 0, 1}, {0, 1, 0} },
+
+    // Ближние (z-)
+    { { 0.5, -0.5, -0.5}, {0, 0}, {0, 0, 1}, {0, 1, 0} },
+    { {-0.5, -0.5, -0.5}, {0, 0}, {0, 0, -1}, {1, 0, 0} },
+    { {-0.5,  0.5, -0.5}, {0, 1}, {0, 0, -1}, {1, 0, 0} },
+    { { 0.5,  0.5, -0.5}, {0, 1}, {0, 0, 1}, {0, 1, 0} },
 };
 static_assert(ARRAY_LEN(cube_verts) == 8);
 static GLuint cube_indices[] = {
-    0, 1, 2,
+    0, 1, 2, // дальняя грань
     0, 2, 3,
 
-    4, 5, 6,
+    4, 5, 6, // ближняя грань
     4, 6, 7,
 
     0, 1, 5,
@@ -74,9 +78,24 @@ static GLuint cube_indices[] = {
 };
 static_assert(ARRAY_LEN(cube_indices) == 6 * 6);
 
+#define FLOOR_HEIGHT -0.0
+
+static Vertex floor_verts[] = {
+    { {-1, FLOOR_HEIGHT, 1}, {0, 0}, {0, 0, 1}, {0.5, 0.5, 0.5}},
+    { {1, FLOOR_HEIGHT, 1}, {0, 0}, {0, 0, 1}, {0.5, 0.5, 0.5}},
+    { {-1, FLOOR_HEIGHT + 0.5, -1}, {0, 0}, {0, 0, 1}, {0.5, 0.5, 0.5}},
+    { {1, FLOOR_HEIGHT + 0.5, -1}, {0, 0}, {0, 0, 1}, {0.5, 0.5, 0.5}},
+};
+
+static GLuint floor_indices[] = {
+    0, 1, 2,
+    1, 2, 3
+};
+
 static Mesh meshes[4096];
 static GLuint vaos[ARRAY_LEN(meshes)];
 static GLuint vbos_ebos [ARRAY_LEN(meshes) * 2];
+GLuint prog;
 
 u8 tmp_buf[1024 * 1024 * 5];
 
@@ -102,7 +121,7 @@ int main(int argc, char **argv) {
         SDL_Log("%s\n", glewGetErrorString(glew_err));
         goto destroy_gl_ctx_lbl;
     }
-
+    cam.up = (Vector3) {0, 1, 0};
     StringView vert_path = {
         .data = VERTEX_SHADER_PATH,
         .size = sizeof(VERTEX_SHADER_PATH)
@@ -126,7 +145,6 @@ int main(int argc, char **argv) {
             return -1;
         default:
     }
-    GLuint prog;
     shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, sizeof(tmp_buf), tmp_buf);
     if (shader_mgr_err != 0) {
         SDL_Log("%s\n", tmp_buf);
@@ -141,18 +159,34 @@ int main(int argc, char **argv) {
         goto destroy_gl_ctx_lbl;
     }
     gl_init(ARRAY_LEN(meshes), meshes, vaos, vbos_ebos);
-    MeshHandle handle;
-    u32 cube_verts_cnt = ARRAY_LEN(cube_verts);
-    u32 cube_indices_cnt = ARRAY_LEN(cube_indices);
-    // u32 cube_indices_cnt = 3;
-    Vertex *verts_arr[] = { cube_verts };
-    GLuint *indices_arr[] = { cube_indices };
-    gl_mesh_init(1, &handle, verts_arr, indices_arr, &cube_verts_cnt, &cube_indices_cnt);
+    MeshHandle handles[2];
+    u32 vert_cnts[] = { ARRAY_LEN(cube_verts), ARRAY_LEN(floor_verts) };
+    u32 indices_cnts[] = { ARRAY_LEN(cube_indices), ARRAY_LEN(floor_indices) };
+    Vertex *verts_arr[] = { cube_verts, floor_verts };
+    GLuint *indices_arr[] = { cube_indices, floor_indices };
+    gl_mesh_init(2, handles, verts_arr, indices_arr, vert_cnts, indices_cnts);
+    GameObject cube = {
+        .mesh = handles[0],
+        .transform = {
+            .position = { 0.5, 0.5, 0.5 },
+            .scale = {0.2, 0.2, 0.2},
+            .rotation = { 0 }
+        }
+    };
+    GameObject floor = {
+        .mesh = handles[1],
+        .transform = {
+            .position = { 0 },
+            .scale = {1, 1, 1},
+            .rotation = { 0 },
+        }
+    };
     SDL_Event ev;
     bool quit = false;
     u64 last = SDL_GetTicks();
     u8 watch_frame_counter = 0;
     SDL_SetWindowRelativeMouseMode(win, true);
+    cam.target = cube.transform.position;
     while (!quit) {
         f32 dx = 0;
         f32 dy = 0;
@@ -163,6 +197,10 @@ int main(int argc, char **argv) {
             bool reloaded;
             shader_mgr_err = shader_mgr_reload_if_needed(&shader_mgr, &reloaded);
             if (reloaded) {
+                shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, sizeof(tmp_buf), tmp_buf);
+                if (shader_mgr_err != 0) {
+                    SDL_Log("Shader reload error: %s\n", tmp_buf);
+                }
                 SDL_Log("%s\n", "Reload");
             }
         }
@@ -179,6 +217,9 @@ int main(int argc, char **argv) {
                     if (SDL_GetWindowRelativeMouseMode(win)){
                         dx = ev.motion.xrel;
                         dy = ev.motion.yrel;
+                        float cam_move_factor = 0.001;
+                        cam.target.x+=dx * cam_move_factor;
+                        cam.target.y+=dy * cam_move_factor;
                         SDL_Log("Move is (%f, %f)\n", dx, dy);
                     }
                     break;
@@ -196,13 +237,52 @@ int main(int argc, char **argv) {
         if (is_key_pressed(SDL_SCANCODE_Q)) {
             quit = true;
         }
+        Vector3 vel = { 0 };
+        if (is_key_pressed(SDL_SCANCODE_W)) {
+            vel.z += 1;
+        }
+        if (is_key_pressed(SDL_SCANCODE_S)) {
+            vel.z -= 1;
+        }
+        if (is_key_pressed(SDL_SCANCODE_D)) {
+            vel.x += 1;
+        }
+        if (is_key_pressed(SDL_SCANCODE_A)) {
+            vel.x -= 1;
+        }
+        if (is_key_just_pressed(SDL_SCANCODE_R)) {
+            memset(&cam.eye, 0, sizeof(cam.eye));
+        }
+        vel = Vector3Normalize(vel);
+        vel.x *= 0.1;
+        vel.y *= 0.1;
+        vel.z *= 0.1;
+        cam.eye = Vector3Add(cam.eye, vel);
+        cam.target = Vector3Add(cam.target, vel);
+        if (vel.x != 0|| vel.y != 0 || vel.z != 0) {
+            SDL_Log("Coord: (%f, %f, %f)\n", cam.eye.x, cam.eye.y, cam.eye.z);
+        }
         (void)is_key_just_pressed;
         memcpy(prev_kb_state, kb_state, num_keys);
 
         glUseProgram(prog);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        gl_mesh_draw(handle);
+
+#if 1
+        game_object_draw(&cube);
+        game_object_draw(&floor);
+#else
+        UNUSED(floor);
+        UNUSED(cube);
+        UNUSED(game_object_draw);
+        {
+            const Matrix total_transform = MatrixIdentity();
+            glUniformMatrix4fv(glGetUniformLocation(prog, "transform"), 1, GL_FALSE, &total_transform.m0);
+            gl_mesh_draw(handles[0]);
+            gl_mesh_draw(handles[1]);
+        }
+#endif
         SDL_GL_SwapWindow(win);
     }
 
@@ -224,12 +304,24 @@ static bool is_key_just_pressed(SDL_Scancode code) {
     return kb_state[code] && !prev_kb_state[code];
 }
 
-static void game_object_draw(const GameObject *obj, const Camera *cam) {
+static void game_object_draw(const GameObject *obj) {
+    UNUSED(cam);
     const Transform *const tr = &obj->transform;
     const Matrix translation = MatrixTranslate(tr->position.x, tr->position.y, tr->position.z);
     const Matrix scale = MatrixScale(tr->scale.x, tr->scale.y, tr->scale.z);
-    const Matrix rotation = QuaternionToMatrix(tr->rotation);
-    const Matrix model = MatrixMultiply(MatrixMultiply(scale, translation), rotation); 
-    const Matrix view = MatrixLookAt(cam->eye, cam->traget, cam->up);
-    // const Matrix total_transform = mul
+    const Matrix model = MatrixMultiply(translation, scale);
+    const Matrix view = MatrixLookAt(cam.eye, cam.target, cam.up);
+    const Matrix projection = MatrixFrustum(-0.5, 0.5, -0.5, 0.5, 0.1, 100);
+#if 1
+    const Matrix view_proj = MatrixMultiply(projection, view);
+#else
+    const Matrix view_proj = MatrixMultiply(view, projection);
+#endif
+    Matrix total_transform = MatrixMultiply(view_proj, model);
+#if 0
+    total_transform = MatrixIdentity();
+    total_transform.m4 = -1;
+#endif
+    glUniformMatrix4fv(glGetUniformLocation(prog, "transform"), 1, GL_FALSE, &total_transform.m0);
+    gl_mesh_draw(obj->mesh);
 }
