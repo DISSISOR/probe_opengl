@@ -9,6 +9,7 @@ GLuint *gl_vaos = nullptr;
 GLuint *gl_vbos_ebos;
 
 void gl_init(u32 max_mesh_cnt, Mesh meshes_buf[static max_mesh_cnt], GLuint vaos_ebos_buf[static max_mesh_cnt * 2], GLuint vbo_sets_buf[static max_mesh_cnt]) {
+    glEnable(GL_DEPTH_TEST);
     gl_meshes = meshes_buf;
     gl_meshes_size = 0;
     gl_meshes_cap = max_mesh_cnt;

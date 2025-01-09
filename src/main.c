@@ -45,15 +45,15 @@ static void game_object_draw(const GameObject *obj);
 
 static Vertex cube_verts[] = {
     // Дальние (z+)
-    { { 0.5, -0.5,  0.5}, {1, 0}, {0, 0, 1}, {0, 1, 0} },
+    { { 0.5, -0.5,  0.5}, {1, 0}, {0, 0, 1}, {1, 0, 0} },
     { {-0.5, -0.5,  0.5}, {1, 0}, {0, 0, -1}, {1, 0, 0} },
     { {-0.5,  0.5,  0.5}, {1, 1}, {0, 0, -1}, {1, 0, 0} },
-    { { 0.5,  0.5,  0.5}, {1, 1}, {0, 0, 1}, {0, 1, 0} },
+    { { 0.5,  0.5,  0.5}, {1, 1}, {0, 0, 1}, {1, 0, 0} },
 
     // Ближние (z-)
     { { 0.5, -0.5, -0.5}, {0, 0}, {0, 0, 1}, {0, 1, 0} },
-    { {-0.5, -0.5, -0.5}, {0, 0}, {0, 0, -1}, {1, 0, 0} },
-    { {-0.5,  0.5, -0.5}, {0, 1}, {0, 0, -1}, {1, 0, 0} },
+    { {-0.5, -0.5, -0.5}, {0, 0}, {0, 0, -1}, {0, 1, 0} },
+    { {-0.5,  0.5, -0.5}, {0, 1}, {0, 0, -1}, {0, 1, 0} },
     { { 0.5,  0.5, -0.5}, {0, 1}, {0, 0, 1}, {0, 1, 0} },
 };
 static_assert(ARRAY_LEN(cube_verts) == 8);
@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
     GameObject cube = {
         .mesh = handles[0],
         .transform = {
-            .position = { 0.5, 0.5, 0.5 },
+            .position = { 0.5, 0, 0 },
             .scale = {0.2, 0.2, 0.2},
             .rotation = { 0 }
         }
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
     u64 last = SDL_GetTicks();
     u8 watch_frame_counter = 0;
     SDL_SetWindowRelativeMouseMode(win, true);
-    cam.target = cube.transform.position;
+    cam.target = (Vector3) { 0, 0, 0 };
     while (!quit) {
         f32 dx = 0;
         f32 dy = 0;
@@ -257,21 +257,30 @@ int main(int argc, char **argv) {
         vel.x *= 0.1;
         vel.y *= 0.1;
         vel.z *= 0.1;
-        cam.eye = Vector3Add(cam.eye, vel);
-        cam.target = Vector3Add(cam.target, vel);
+        Vector3 cam_forward = Vector3Subtract(cam.target, cam.eye);
+        Vector3 cam_right = Vector3Normalize(Vector3CrossProduct(cam.up, cam_forward));
+        cam_right = Vector3Scale(cam_right, vel.x);
+        cam.eye = Vector3Add(cam_right, cam.eye);
+        cam.target = Vector3Add(Vector3Scale(cam_right, vel.x), cam.target);
+
+        cam_forward = Vector3Scale(cam_forward, vel.z);
+        cam.eye = Vector3Add(cam_forward, cam.eye);
+        cam.target = Vector3Add(Vector3Scale(cam_forward, vel.x), cam.target);
         if (vel.x != 0|| vel.y != 0 || vel.z != 0) {
             SDL_Log("Coord: (%f, %f, %f)\n", cam.eye.x, cam.eye.y, cam.eye.z);
+            SDL_Log("cam_right: (%f, %f, %f)\n", cam_right.x, cam_right.y, cam_right.z);
         }
         (void)is_key_just_pressed;
         memcpy(prev_kb_state, kb_state, num_keys);
 
         glUseProgram(prog);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 #if 1
         game_object_draw(&cube);
-        game_object_draw(&floor);
+        // game_object_draw(&floor);
+        UNUSED(floor);
 #else
         UNUSED(floor);
         UNUSED(cube);
@@ -310,18 +319,11 @@ static void game_object_draw(const GameObject *obj) {
     const Matrix translation = MatrixTranslate(tr->position.x, tr->position.y, tr->position.z);
     const Matrix scale = MatrixScale(tr->scale.x, tr->scale.y, tr->scale.z);
     const Matrix model = MatrixMultiply(translation, scale);
-    const Matrix view = MatrixLookAt(cam.eye, cam.target, cam.up);
-    const Matrix projection = MatrixFrustum(-0.5, 0.5, -0.5, 0.5, 0.1, 100);
-#if 1
-    const Matrix view_proj = MatrixMultiply(projection, view);
-#else
-    const Matrix view_proj = MatrixMultiply(view, projection);
-#endif
-    Matrix total_transform = MatrixMultiply(view_proj, model);
-#if 0
-    total_transform = MatrixIdentity();
-    total_transform.m4 = -1;
-#endif
+    // const Matrix projection = MatrixFrustum(-0.5, 0.5, -0.5, 0.5, 0.1, 100);
+    Matrix view = MatrixLookAt(cam.eye, cam.target, cam.up);
+    view = MatrixIdentity();
+    Matrix view_model = MatrixMultiply(view, model);
+    Matrix total_transform = view_model;
     glUniformMatrix4fv(glGetUniformLocation(prog, "transform"), 1, GL_FALSE, &total_transform.m0);
     gl_mesh_draw(obj->mesh);
 }
