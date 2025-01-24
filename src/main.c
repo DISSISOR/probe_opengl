@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 
 #include "common.h"
+#include "arena.h"
 #include "gl.h"
 #include "shader_manager.h"
 
@@ -101,7 +102,13 @@ static GLuint vaos[ARRAY_LEN(meshes)];
 static GLuint vbos_ebos [ARRAY_LEN(meshes) * 2];
 GLuint prog;
 
-u8 tmp_buf[1024 * 1024 * 5];
+enum { PERSIST_ARENA_SIZE = 1024 * 1024 * 1024 };
+u8 persist_arena_buf[ PERSIST_ARENA_SIZE ];
+u8 tmp_arena_buf[1024 * 1024 * 5];
+
+Arena g_arena;
+Arena tmp_arena;
+StringView shader_log;
 
 #define VERTEX_SHADER_PATH "shaders/vert.glsl"
 #define FRAGMENT_SHADER_PATH "shaders/frag.glsl"
@@ -109,6 +116,8 @@ u8 tmp_buf[1024 * 1024 * 5];
 int main(int argc, char **argv) {
     UNUSED(argc);
     UNUSED(argv);
+    arena_init(&g_arena, persist_arena_buf, sizeof(persist_arena_buf));
+    arena_init(&tmp_arena, tmp_arena_buf, sizeof(tmp_arena_buf));
     int retval = 0;
     EXCEPT_SUCC_SDL(SDL_Init(SDL_INIT_VIDEO), return_lbl);
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
@@ -136,22 +145,24 @@ int main(int argc, char **argv) {
     };
     ShaderMgr shader_mgr;
     ShaderMgrError shader_mgr_err;
-    shader_mgr_err = shader_mgr_init(&shader_mgr, vert_path, frag_path, sizeof(tmp_buf), tmp_buf);
+    Arena restore = g_arena;
+    shader_mgr_err = shader_mgr_init(&shader_mgr, vert_path, frag_path, &g_arena, &shader_log);
     switch (shader_mgr_err) {
         case SHADER_MGR_ERROR_COMPILE_VERT_SHADER:
-            SDL_Log("Vert %s\n", tmp_buf);
+            SDL_Log("Vert %s\n", shader_log.data);
             return -1;
         case SHADER_MGR_ERROR_COMPILE_FRAG_SHADER:
-            SDL_Log("Frag %s\n", tmp_buf);
+            SDL_Log("Frag %s\n", shader_log.data);
             return -1;
         case SHADER_MGR_ERROR_LINK_PROGRAM:
             SDL_Log("%s\n", "LINK");
             return -1;
         default:
     }
-    shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, sizeof(tmp_buf), tmp_buf);
+    g_arena = restore;
+    shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, &g_arena, &shader_log);
     if (shader_mgr_err != 0) {
-        SDL_Log("%s\n", tmp_buf);
+        SDL_Log("%s\n", shader_log.data);
         return -1;
     }
 
@@ -172,7 +183,7 @@ int main(int argc, char **argv) {
     GameObject cube = {
         .mesh = handles[0],
         .transform = {
-            .position = { 0.5, 0, 0 },
+            .position = { 1, 1, 1 },
             .scale = {0.2, 0.2, 0.2},
             .rotation = { 0 }
         }
@@ -191,7 +202,12 @@ int main(int argc, char **argv) {
     u8 watch_frame_counter = 0;
     SDL_SetWindowRelativeMouseMode(win, true);
     cam.target = (Vector3) { 0, 0, 0 };
+    enum { FRAME_ARENA_SIZE = 1024 * 1024 * 6 };
+    u8* frame_arena_buf = ARENA_MAKE(&g_arena, u8, FRAME_ARENA_SIZE);
+    Arena frame_arena;
+    arena_init(&frame_arena, frame_arena_buf, FRAME_ARENA_SIZE);
     while (!quit) {
+        arena_free(&frame_arena);
         f32 dx = 0;
         f32 dy = 0;
         u64 cur_time = SDL_GetTicks();
@@ -199,11 +215,14 @@ int main(int argc, char **argv) {
         watch_frame_counter++;
         if (watch_frame_counter > 60) {
             bool reloaded;
-            shader_mgr_err = shader_mgr_reload_if_needed(&shader_mgr, &reloaded);
+            shader_mgr_err = shader_mgr_reload_if_needed(&shader_mgr, &reloaded, &frame_arena, &shader_log);
+            if (shader_mgr_err != SHADER_MGR_ERROR_NONE) {
+                SDL_Log("Shader reload err: %s\n", shader_log.data);
+            }
             if (reloaded) {
-                shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, sizeof(tmp_buf), tmp_buf);
+                shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, &frame_arena, &shader_log);
                 if (shader_mgr_err != 0) {
-                    SDL_Log("Shader reload error: %s\n", tmp_buf);
+                    SDL_Log("Shader reload error: %s\n", shader_log.data);
                 }
                 SDL_Log("%s\n", "Reload");
             }
@@ -223,7 +242,6 @@ int main(int argc, char **argv) {
                         float cam_move_factor = 0.007;
                         camera_pitch(&cam, -dy * cam_move_factor);
                         camera_yaw(&cam, -dx * cam_move_factor);
-                        SDL_Log("Move is (%f, %f)\n", dx, dy);
                     }
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -292,25 +310,13 @@ int main(int argc, char **argv) {
         const Matrix proj = MatrixPerspective(DEG2RAD * 45, 800.f/600.f, 0.1, 100);
         const Matrix view = MatrixLookAt(cam.eye, cam.target, cam.up);
         proj_view = MatrixMultiply(view, proj);
+        glUniformMatrix4fv(glGetUniformLocation(prog, "proj_view"), 1, GL_FALSE, &proj_view.m0);
         glUseProgram(prog);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-#if 1
         game_object_draw(&cube);
-        // game_object_draw(&floor);
-        UNUSED(floor);
-#else
-        UNUSED(floor);
-        UNUSED(cube);
-        UNUSED(game_object_draw);
-        {
-            const Matrix total_transform = MatrixIdentity();
-            glUniformMatrix4fv(glGetUniformLocation(prog, "transform"), 1, GL_FALSE, &total_transform.m0);
-            gl_mesh_draw(handles[0]);
-            gl_mesh_draw(handles[1]);
-        }
-#endif
+        game_object_draw(&floor);
         SDL_GL_SwapWindow(win);
     }
 
@@ -332,17 +338,6 @@ static bool is_key_just_pressed(SDL_Scancode code) {
     return kb_state[code] && !prev_kb_state[code];
 }
 
-static void game_object_draw(const GameObject *obj) {
-    UNUSED(cam);
-    const Transform *const tr = &obj->transform;
-    const Matrix translation = MatrixTranslate(tr->position.x, tr->position.y, tr->position.z);
-    const Matrix scale = MatrixScale(tr->scale.x, tr->scale.y, tr->scale.z);
-    const Matrix model = MatrixMultiply(translation, scale);
-    const Matrix total = MatrixMultiply(proj_view, model);
-    glUniformMatrix4fv(glGetUniformLocation(prog, "transform"), 1, GL_FALSE, &total.m0);
-    gl_mesh_draw(obj->mesh);
-}
-
 static void camera_yaw(Camera *cam, float angle) {
     const Vector3 cam_forward = Vector3Normalize(Vector3Subtract(cam->eye, cam->target));
     const Vector3 new_forward = Vector3RotateByAxisAngle(cam_forward, cam->up, angle);
@@ -354,4 +349,14 @@ static void camera_pitch(Camera *cam, float angle) {
     const Vector3 cam_right = Vector3Normalize(Vector3CrossProduct(cam->up, cam_forward));
     const Vector3 new_forward = Vector3RotateByAxisAngle(cam_forward, cam_right, angle);
     cam->target = Vector3Add(cam->eye, new_forward);
+}
+
+static void game_object_draw(const GameObject *obj) {
+    UNUSED(cam);
+    const Transform *const tr = &obj->transform;
+    const Matrix translation = MatrixTranslate(tr->position.x, tr->position.y, tr->position.z);
+    const Matrix scale = MatrixScale(tr->scale.x, tr->scale.y, tr->scale.z);
+    const Matrix model = MatrixMultiply(translation, scale);
+    glUniformMatrix4fv(glGetUniformLocation(prog, "model"), 1, GL_FALSE, &model.m0);
+    gl_mesh_draw(obj->mesh);
 }

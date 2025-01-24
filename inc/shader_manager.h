@@ -7,6 +7,8 @@
 
 #include "common.h"
 
+typedef struct Arena Arena;
+
 typedef struct ShaderInfo {
     StringView source_file_path;
     int source_file_fd;
@@ -37,9 +39,9 @@ typedef enum ShaderMgrError {
     SHADER_MGR_ERROR_LINK_PROGRAM,
 } ShaderMgrError;
 
-ShaderMgrError shader_mgr_reload_if_needed(ShaderMgr *mgr, bool *reloaded);
-ShaderMgrError shader_mgr_reload_shaders(ShaderMgr *mgr, u32 buf_size, u8 buf[static buf_size]);
-ShaderMgrError shader_mgr_get_program(ShaderMgr *mgr, GLuint *prog, u32 buf_size, u8 buf[static buf_size]);
-ShaderMgrError shader_mgr_init(ShaderMgr *mgr, StringView vertex_path, StringView fragment_path, u32 buf_size, u8[static buf_size]);
+ShaderMgrError shader_mgr_reload_if_needed(ShaderMgr *mgr, bool *reloaded, Arena *arena, StringView *log);
+ShaderMgrError shader_mgr_reload_shaders(ShaderMgr *mgr, Arena *arena, StringView *log);
+ShaderMgrError shader_mgr_get_program(ShaderMgr *mgr, GLuint *prog, Arena *arena, StringView *log);
+ShaderMgrError shader_mgr_init(ShaderMgr *mgr, StringView vertex_path, StringView fragment_path, Arena *arena, StringView *log);
 
 #endif // SHADER_MANAGER_H_

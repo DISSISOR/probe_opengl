@@ -1,10 +1,10 @@
 #include "gl.h"
 
-Mesh *gl_meshes = nullptr;
+Mesh *gl_meshes = NULL;
 u32 gl_meshes_size = 0;
 u32 gl_meshes_cap = 0;
 
-GLuint *gl_vaos = nullptr;
+GLuint *gl_vaos = NULL;
 
 GLuint *gl_vbos_ebos;
 

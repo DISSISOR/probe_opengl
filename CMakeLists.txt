@@ -8,6 +8,7 @@ set( srcs
     src/stb_image.c
     src/gl.c
     src/shader_manager.c
+    src/arena.c
 )
 include_directories(inc)
 
