@@ -110,8 +110,8 @@ Arena g_arena;
 Arena tmp_arena;
 StringView shader_log;
 
-#define VERTEX_SHADER_PATH "shaders/vert.glsl"
-#define FRAGMENT_SHADER_PATH "shaders/frag.glsl"
+const StringView vertex_shader_path = SV_FROM_LIT_Z("shaders/vert.glsl");
+const StringView fragment_shader_path = SV_FROM_LIT_Z("shaders/frag.glsl");
 
 int main(int argc, char **argv) {
     UNUSED(argc);
@@ -135,24 +135,17 @@ int main(int argc, char **argv) {
         goto destroy_gl_ctx_lbl;
     }
     cam.up = (Vector3) {0, 1, 0};
-    StringView vert_path = {
-        .data = VERTEX_SHADER_PATH,
-        .size = sizeof(VERTEX_SHADER_PATH)
-    };
-    StringView frag_path = {
-        .data = FRAGMENT_SHADER_PATH,
-        .size = sizeof(FRAGMENT_SHADER_PATH)
-    };
     ShaderMgr shader_mgr;
     ShaderMgrError shader_mgr_err;
+
     Arena restore = g_arena;
-    shader_mgr_err = shader_mgr_init(&shader_mgr, vert_path, frag_path, &g_arena, &shader_log);
+    shader_mgr_err = shader_mgr_init(&shader_mgr, vertex_shader_path, fragment_shader_path, &g_arena, &shader_log);
     switch (shader_mgr_err) {
         case SHADER_MGR_ERROR_COMPILE_VERT_SHADER:
-            SDL_Log("Vert %s\n", shader_log.data);
+            SDL_Log("Vert: " SV_FSPEC "\n", SV_FARGS(shader_log));
             return -1;
         case SHADER_MGR_ERROR_COMPILE_FRAG_SHADER:
-            SDL_Log("Frag %s\n", shader_log.data);
+            SDL_Log("Frag: " SV_FSPEC "\n", SV_FARGS(shader_log));
             return -1;
         case SHADER_MGR_ERROR_LINK_PROGRAM:
             SDL_Log("%s\n", "LINK");
@@ -160,9 +153,10 @@ int main(int argc, char **argv) {
         default:
     }
     g_arena = restore;
+
     shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, &g_arena, &shader_log);
     if (shader_mgr_err != 0) {
-        SDL_Log("%s\n", shader_log.data);
+        SDL_Log(SV_FSPEC "\n", SV_FARGS(shader_log));
         return -1;
     }
 
@@ -207,7 +201,7 @@ int main(int argc, char **argv) {
     Arena frame_arena;
     arena_init(&frame_arena, frame_arena_buf, FRAME_ARENA_SIZE);
     while (!quit) {
-        arena_free(&frame_arena);
+        arena_clear(&frame_arena);
         f32 dx = 0;
         f32 dy = 0;
         u64 cur_time = SDL_GetTicks();
@@ -217,12 +211,12 @@ int main(int argc, char **argv) {
             bool reloaded;
             shader_mgr_err = shader_mgr_reload_if_needed(&shader_mgr, &reloaded, &frame_arena, &shader_log);
             if (shader_mgr_err != SHADER_MGR_ERROR_NONE) {
-                SDL_Log("Shader reload err: %s\n", shader_log.data);
+                SDL_Log("Shader reload err: " SV_FSPEC "\n", SV_FARGS(shader_log));
             }
             if (reloaded) {
                 shader_mgr_err = shader_mgr_get_program(&shader_mgr, &prog, &frame_arena, &shader_log);
                 if (shader_mgr_err != 0) {
-                    SDL_Log("Shader reload error: %s\n", shader_log.data);
+                    SDL_Log("Shader reload error: " SV_FSPEC  "\n", SV_FARGS(shader_log));
                 }
                 SDL_Log("%s\n", "Reload");
             }

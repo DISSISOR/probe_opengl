@@ -1,6 +1,6 @@
 #include "arena.h"
 
-void arena_init(Arena *arena, u8 *buf, u32 buf_size) {
+void arena_init(Arena *arena, u8 *buf, size_t buf_size) {
     // MY_ASSERT(is_power_of_two((uintptr_t)buf));
     MY_ASSERT(buf);
     MY_ASSERT(buf_size);
@@ -10,12 +10,12 @@ void arena_init(Arena *arena, u8 *buf, u32 buf_size) {
     arena->size = buf_size;
 }
 
-void arena_free(Arena *arena) {
+void arena_clear(Arena *arena) {
     arena->offset = 0;
     arena->prev_offset = 0;
 }
 
-void* arena_alloc(Arena *arena, u32 size, u32 alignment) {
+void* arena_alloc(Arena *arena, size_t size, size_t alignment) {
     MY_ASSERT(is_power_of_two(alignment));
     arena->prev_offset = arena->offset;
     u32 offset = align_forward(arena->offset, alignment);
@@ -26,7 +26,7 @@ void* arena_alloc(Arena *arena, u32 size, u32 alignment) {
     return arena->buf + offset;
 }
 
-void* arena_realloc(Arena *arena, void *old_mem, u32 old_size, u32 new_size, u32 alignment) {
+void* arena_realloc(Arena *arena, void *old_mem, size_t old_size, size_t new_size, size_t alignment) {
     MY_ASSERT(is_power_of_two(alignment));
 
 	if ((u8*)old_mem < arena->buf || (u8*)old_mem > (arena->buf + arena->size)) {

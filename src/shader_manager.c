@@ -126,7 +126,7 @@ ShaderMgrError shader_mgr_reload_if_needed(ShaderMgr *mgr, bool *reloaded, Arena
     u8 buf[BUF_SIZE];
     *reloaded = false;
     for (;;) {
-        auto len = read(mgr->inotify_fd, buf, sizeof(buf));
+        int len = read(mgr->inotify_fd, buf, sizeof(buf));
         if (len <= 0) break;
         const struct inotify_event *event;
         // FIXME: reloads EVERY shader for EVERY inotify event

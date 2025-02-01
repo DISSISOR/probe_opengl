@@ -12,7 +12,7 @@ out vec3 ourColor;
 void main() {
     ourColor = aColor;
     gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1);
-    gl_Position *= proj_view * model;
+    gl_Position *= model * proj_view;
     // gl_Position.w = 1;
     // gl_Position += 0.2;
     // gl_Position *= transform;

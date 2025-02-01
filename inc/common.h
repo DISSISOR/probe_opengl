@@ -83,7 +83,27 @@ typedef struct StringView {
     char *data;
     u32 size;
 } StringView;
+
+typedef struct ImmutStringView {
+    const char *data;
+    u32 size;
+} ImmutStringView;
+
 static_assert(sizeof(StringView) == 16);
+
+#define SV_FROM_LIT(LIT) { \
+    .data = "" LIT "",\
+    .size = ARRAY_LEN(LIT) - 1\
+}
+
+// preserves zero terminator
+#define SV_FROM_LIT_Z(LIT) { \
+    .data = "" LIT "",\
+    .size = ARRAY_LEN(LIT)\
+}
+
+#define SV_FSPEC "%.*s"
+#define SV_FARGS(sv) (int)(sv).size, (sv).data
 
 static inline bool is_power_of_two(u64 x) {
     return (x & (x-1)) == 0;
